@@ -127,40 +127,57 @@ async function main() {
   try { flightsByDate = await scrape(); }
   catch (err) { console.error('  Scrape error:', err.message); process.exit(1); }
 
-  const changes = [];
   const newState = {};
 
+  // Build per-flight state
   for (const [date, flights] of Object.entries(flightsByDate)) {
     for (const flight of flights) {
       if (!flight.economy) continue;
       const key = `${date}|${flight.flight}|${flight.from}`;
-      const prev = prevState[key];
       newState[key] = { ...flight, date, lastSeen: ts };
-
-      const day = date.substring(5).replace('-', '/');
-
-      if (!prev) {
-        changes.push({ type: 'new', msg: `NEW: ${day} ${flight.flight} ${flight.from} ${flight.dep} $${flight.economy}` });
-      } else if (flight.economy < prev.economy) {
-        changes.push({ type: 'drop', msg: `PRICE DROP: ${day} ${flight.flight} $${prev.economy} -> $${flight.economy}` });
-      } else if (flight.economy > prev.economy) {
-        changes.push({ type: 'up', msg: `PRICE UP: ${day} ${flight.flight} $${prev.economy} -> $${flight.economy}` });
-      }
-
-      if (flight.economy < PRICE_THRESHOLD && (!prev || prev.economy >= PRICE_THRESHOLD))
-        changes.push({ type: 'under', msg: `UNDER $${PRICE_THRESHOLD}! ${day} ${flight.flight} ${flight.from} ${flight.dep} $${flight.economy}` });
     }
   }
 
-  // Check for removed flights
-  for (const [key, prev] of Object.entries(prevState)) {
-    if (!newState[key]) {
-      const day = prev.date.substring(5).replace('-', '/');
-      changes.push({ type: 'gone', msg: `GONE: ${day} ${prev.flight} ${prev.from} (was $${prev.economy})` });
+  // Build per-date change summary
+  const dateChanges = {};
+  for (let day = 12; day <= 30; day++) {
+    const date = `2026-04-${String(day).padStart(2, '0')}`;
+    const dayLabel = `Apr ${day}`;
+    const curFlights = flightsByDate[date] || [];
+    const curWithPrice = curFlights.filter(f => f.economy);
+
+    // Previous flights for this date
+    const prevForDate = Object.entries(prevState).filter(([k]) => k.startsWith(date + '|')).map(([, v]) => v);
+
+    const prevCheapest = prevForDate.length > 0 ? Math.min(...prevForDate.map(f => f.economy).filter(p => p)) : null;
+    const curCheapest = curWithPrice.length > 0 ? Math.min(...curWithPrice.map(f => f.economy).filter(p => p)) : null;
+    const cheapFlight = curWithPrice.find(f => f.economy === curCheapest);
+
+    if (curWithPrice.length > 0 && prevForDate.length === 0) {
+      // New date with flights
+      const fire = curCheapest < PRICE_THRESHOLD ? ' 🔥' : '';
+      dateChanges[date] = `${dayLabel}: ${curWithPrice.length} new flights, cheapest $${curCheapest} (${cheapFlight.from} ${cheapFlight.dep})${fire}`;
+    } else if (curWithPrice.length === 0 && prevForDate.length > 0) {
+      // All flights gone
+      dateChanges[date] = `${dayLabel}: all flights gone (was $${prevCheapest})`;
+    } else if (curCheapest && prevCheapest && curCheapest < prevCheapest) {
+      // Price drop
+      const fire = curCheapest < PRICE_THRESHOLD ? ' 🔥' : '';
+      dateChanges[date] = `${dayLabel}: PRICE DROP $${prevCheapest} -> $${curCheapest} (${cheapFlight.from} ${cheapFlight.dep})${fire}`;
+    } else if (curCheapest && prevCheapest && curCheapest > prevCheapest) {
+      // Price up
+      const fire = curCheapest < PRICE_THRESHOLD ? ' 🔥' : '';
+      dateChanges[date] = `${dayLabel}: PRICE UP $${prevCheapest} -> $${curCheapest}${fire}`;
+    } else if (curWithPrice.length !== prevForDate.length && curWithPrice.length > 0) {
+      // Flight count changed
+      const diff = curWithPrice.length - prevForDate.length;
+      const direction = diff > 0 ? `${diff} new` : `${Math.abs(diff)} removed`;
+      dateChanges[date] = `${dayLabel}: ${direction}, now ${curWithPrice.length} flights, cheapest $${curCheapest}`;
     }
   }
 
   saveState(newState);
+  const changes = Object.values(dateChanges);
 
   // Build daily summary
   const noFlightDays = [];
@@ -184,12 +201,10 @@ async function main() {
   console.log(`\n${summary}`);
 
   if (changes.length > 0) {
-    console.log(`\n  ${changes.length} changes:`);
-    changes.forEach(c => console.log(`    ${c.msg}`));
+    console.log(`\n  ${changes.length} date(s) changed:`);
+    changes.forEach(c => console.log(`    ${c}`));
 
-    // Send changes alert only (no separate summary)
-    const changeMsg = changes.map(c => c.msg).join('\n');
-    await sendNtfy(`El Al NYC->TLV: ${changes.length} change(s)!`, changeMsg);
+    await sendNtfy(`El Al NYC->TLV: ${changes.length} update(s)`, changes.join('\n'));
   } else {
     console.log('  No changes.');
     // Send daily summary at 9am EST (14:00 UTC)
