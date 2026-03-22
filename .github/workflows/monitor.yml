@@ -1,0 +1,45 @@
+name: El Al Flight Monitor
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Every 30 minutes
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  check-flights:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore state
+        uses: actions/cache@v4
+        with:
+          path: |
+            elal-nyc-state.json
+            elal-nyc-lastsummary.txt
+          key: flight-state-${{ github.run_id }}
+          restore-keys: |
+            flight-state-
+
+      - name: Run monitor
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: node monitor.js
+
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            elal-nyc-state.json
+            elal-nyc-lastsummary.txt
+          key: flight-state-${{ github.run_id }}
