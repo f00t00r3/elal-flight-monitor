@@ -187,12 +187,9 @@ async function main() {
     console.log(`\n  ${changes.length} changes:`);
     changes.forEach(c => console.log(`    ${c.msg}`));
 
-    // Send changes alert
+    // Send changes alert only (no separate summary)
     const changeMsg = changes.map(c => c.msg).join('\n');
     await sendNtfy(`El Al NYC->TLV: ${changes.length} change(s)!`, changeMsg);
-
-    // Also send full summary
-    await sendNtfy('El Al NYC->TLV: Full Summary', summary);
   } else {
     console.log('  No changes.');
     // Send daily summary at 9am EST (14:00 UTC)
