@@ -2,8 +2,12 @@ name: El Al Flight Monitor
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # Every 30 minutes
+    - cron: '*/15 * * * *'  # Every 15 minutes
   workflow_dispatch: # Allow manual trigger
+
+concurrency:
+  group: flight-monitor
+  cancel-in-progress: false
 
 jobs:
   check-flights:
