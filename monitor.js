@@ -13,7 +13,7 @@ function loadState() { try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8
 function saveState(s) { fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2)); }
 
 function sendNtfy(title, message) {
-  const payload = JSON.stringify({ topic: NTFY_TOPIC, title, message, priority: 5, tags: ['airplane', 'rotating_light'], click: 'https://www.elal.com/eng/booking/flight-search/' });
+  const payload = JSON.stringify({ topic: NTFY_TOPIC, title, message, priority: 5, tags: ['airplane', 'rotating_light'] });
   return new Promise((resolve) => {
     const req = https.request('https://ntfy.sh', { method: 'POST', headers: { 'Content-Type': 'application/json' } }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { console.log(`  [NTFY] ${res.statusCode}`); resolve(); }); });
     req.on('error', () => resolve()); req.write(payload); req.end();
@@ -174,7 +174,7 @@ async function main() {
     }
     const cheapest = Math.min(...flights.map(f => f.economy).filter(p => p));
     const cheapFlight = flights.find(f => f.economy === cheapest);
-    const marker = cheapest < PRICE_THRESHOLD ? ' <=' : '';
+    const marker = cheapest < PRICE_THRESHOLD ? ' 🔥' : '';
     summaryLines.push(`Apr ${day}: $${cheapest} (${cheapFlight.from} ${cheapFlight.dep})${marker}`);
   }
 
