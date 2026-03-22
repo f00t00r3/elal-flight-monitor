@@ -179,8 +179,7 @@ async function main() {
   }
 
   const summary = `El Al NYC->TLV | 2 ADT + 2 CHD\n\n` +
-    summaryLines.join('\n') +
-    `\n\nNo flights: ${noFlightDays.map(d => `Apr ${d}`).join(', ')}`;
+    (summaryLines.length > 0 ? summaryLines.join('\n') : 'No flights available on any date.');
 
   console.log(`\n${summary}`);
 
