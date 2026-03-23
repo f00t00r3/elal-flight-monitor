@@ -1,0 +1,36 @@
+name: Test State Persistence
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'write or read'
+        required: true
+        default: 'write'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache/restore@v4
+        with:
+          path: test-state.json
+          key: test-state-dummy
+          restore-keys: test-state-
+
+      - name: Check state
+        run: |
+          echo "=== Current state ==="
+          cat test-state.json 2>/dev/null || echo "NO STATE FILE"
+
+          if [ "${{ inputs.action }}" = "write" ]; then
+            echo '{"written":"'$(date -u)'"}'  > test-state.json
+            echo "=== Wrote new state ==="
+            cat test-state.json
+          fi
+
+      - uses: actions/cache/save@v4
+        if: inputs.action == 'write'
+        with:
+          path: test-state.json
+          key: test-state-${{ github.run_id }}
