@@ -29,14 +29,20 @@ function collectOutbound(text) {
     ];
     return bounds.map(b => {
       const seg = b.segments?.[0];
-      return seg ? {
+      if (!seg) return null;
+      // Only care about economy. Skip Premium/Business flights entirely.
+      const economyFare = b.fares?.find(f => f.bookingClassName === 'economy');
+      if (!economyFare) return null;
+      const price = economyFare.netPrice?.cash?.amount || null;
+      if (!price) return null;
+      return {
         flight: `LY${seg.id?.split('_')[0]}`,
         from: seg.departureAirport?.code,
         dep: seg.departureDate?.substring(11, 16),
         arr: seg.arrivalDate?.substring(11, 16),
-        economy: b.fares?.[0]?.netPrice?.cash?.amount || null,
+        economy: price,
         date: seg.departureDate?.substring(0, 10)
-      } : null;
+      };
     }).filter(Boolean);
   } catch { return []; }
 }
