@@ -133,64 +133,67 @@ async function main() {
   try { flightsByDate = await scrape(); }
   catch (err) { console.error('  Scrape error:', err.message); process.exit(1); }
 
-  const newState = {};
-  const MISS_THRESHOLD = 3; // Only report "gone" after 3 consecutive misses
+  // Simple approach: only compare dates where we GOT results this run.
+  // If a date returned 0 flights, ignore it completely (likely scrape failure).
+  // State only stores the last SUCCESSFUL scrape per date.
+  const newState = { ...prevState }; // start with previous state
 
-  // Build per-flight state
-  for (const [date, flights] of Object.entries(flightsByDate)) {
-    for (const flight of flights) {
-      if (!flight.economy) continue;
-      const key = `${date}|${flight.flight}|${flight.from}`;
-      newState[key] = { ...flight, date, lastSeen: ts, missCount: 0 };
-    }
-  }
-
-  // For flights in prev state but not in current results, carry forward with increased missCount
-  for (const [key, prev] of Object.entries(prevState)) {
-    if (!newState[key]) {
-      const missCount = (prev.missCount || 0) + 1;
-      if (missCount < MISS_THRESHOLD) {
-        // Keep in state - likely a scrape failure, not actually gone
-        newState[key] = { ...prev, missCount };
-      }
-      // If missCount >= MISS_THRESHOLD, don't carry forward (truly gone)
-    }
-  }
-
-  // Build per-date change summary using confirmed state only
   const dateChanges = {};
   for (let day = 12; day <= 30; day++) {
     const date = `2026-04-${String(day).padStart(2, '0')}`;
     const dayLabel = `Apr ${day}`;
+    const curFlights = (flightsByDate[date] || []).filter(f => f.economy);
 
-    // Current confirmed flights (missCount === 0 means seen this run)
-    const curForDate = Object.entries(newState)
-      .filter(([k, v]) => k.startsWith(date + '|') && v.missCount === 0)
-      .map(([, v]) => v);
+    // If we got 0 results, track consecutive misses via a counter in state
+    const missKey = `${date}|_misses`;
+    if (curFlights.length === 0) {
+      const prevMisses = prevState[missKey]?.count || 0;
+      const hadFlights = Object.entries(prevState).some(([k, v]) => k.startsWith(date + '|') && k !== missKey);
+      newState[missKey] = { count: prevMisses + 1 };
 
-    // Previous confirmed flights (missCount === 0 last run)
+      // After 5 consecutive misses, report as truly gone
+      if (hadFlights && prevMisses + 1 >= 5) {
+        const prevForDate = Object.entries(prevState).filter(([k]) => k.startsWith(date + '|') && k !== missKey).map(([, v]) => v);
+        const prevCheapest = Math.min(...prevForDate.map(f => f.economy).filter(p => p));
+        dateChanges[date] = `${dayLabel}: all flights gone (was $${prevCheapest})`;
+        // Remove old flight entries from state
+        for (const key of Object.keys(newState)) {
+          if (key.startsWith(date + '|') && key !== missKey) delete newState[key];
+        }
+        delete newState[missKey];
+      }
+      continue;
+    }
+
+    // Got results - reset miss counter
+    delete newState[missKey];
+
+    // Update state with fresh data for this date
+    // First remove old entries for this date
+    for (const key of Object.keys(newState)) {
+      if (key.startsWith(date + '|')) delete newState[key];
+    }
+    for (const flight of curFlights) {
+      newState[`${date}|${flight.flight}|${flight.from}`] = { ...flight, date, lastSeen: ts };
+    }
+
+    // Previous flights for this date
     const prevForDate = Object.entries(prevState)
-      .filter(([k, v]) => k.startsWith(date + '|') && (v.missCount || 0) === 0)
+      .filter(([k]) => k.startsWith(date + '|'))
       .map(([, v]) => v);
 
     const prevCheapest = prevForDate.length > 0 ? Math.min(...prevForDate.map(f => f.economy).filter(p => p)) : null;
-    const curCheapest = curForDate.length > 0 ? Math.min(...curForDate.map(f => f.economy).filter(p => p)) : null;
-    const cheapFlight = curForDate.find(f => f.economy === curCheapest);
+    const curCheapest = Math.min(...curFlights.map(f => f.economy));
+    const cheapFlight = curFlights.find(f => f.economy === curCheapest);
 
-    // Truly gone = was in prev AND now exceeded miss threshold
-    const trulyGone = prevForDate.length > 0 && curForDate.length === 0 &&
-      Object.entries(prevState).filter(([k]) => k.startsWith(date + '|'))
-        .every(([k, v]) => !newState[k] || newState[k].missCount >= MISS_THRESHOLD - 1);
-
-    if (curForDate.length > 0 && prevForDate.length === 0) {
+    if (prevForDate.length === 0) {
+      // Genuinely new date
       const fire = curCheapest < PRICE_THRESHOLD ? ' 🔥' : '';
-      dateChanges[date] = `${dayLabel}: ${curForDate.length} new flights, cheapest $${curCheapest} (${cheapFlight.from} ${cheapFlight.dep})${fire}`;
-    } else if (trulyGone) {
-      dateChanges[date] = `${dayLabel}: all flights gone (was $${prevCheapest})`;
-    } else if (curCheapest && prevCheapest && curCheapest < prevCheapest) {
+      dateChanges[date] = `${dayLabel}: ${curFlights.length} new flights, cheapest $${curCheapest} (${cheapFlight.from} ${cheapFlight.dep})${fire}`;
+    } else if (curCheapest < prevCheapest) {
       const fire = curCheapest < PRICE_THRESHOLD ? ' 🔥' : '';
       dateChanges[date] = `${dayLabel}: PRICE DROP $${prevCheapest} -> $${curCheapest} (${cheapFlight.from} ${cheapFlight.dep})${fire}`;
-    } else if (curCheapest && prevCheapest && curCheapest > prevCheapest) {
+    } else if (curCheapest > prevCheapest) {
       const fire = curCheapest < PRICE_THRESHOLD ? ' 🔥' : '';
       dateChanges[date] = `${dayLabel}: PRICE UP $${prevCheapest} -> $${curCheapest}${fire}`;
     }
