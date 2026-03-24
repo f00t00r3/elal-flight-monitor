@@ -223,26 +223,26 @@ async function main() {
 
   console.log(`\n${summary}`);
 
+  // Send change alerts
   if (changes.length > 0) {
     console.log(`\n  ${changes.length} date(s) changed:`);
     changes.forEach(c => console.log(`    ${c}`));
-
     await sendNtfy(`El Al NYC->TLV: ${changes.length} update(s)`, changes.join('\n'));
   } else {
     console.log('  No changes.');
-    // Send daily summary at 9am EST (14:00 UTC)
-    const nowUTC = new Date();
-    const estHour = (nowUTC.getUTCHours() - 5 + 24) % 24;
-    const estMin = nowUTC.getUTCMinutes();
-    const summaryFile = path.join(__dirname, 'elal-nyc-lastsummary.txt');
-    let lastSummaryDate = '';
-    try { lastSummaryDate = fs.readFileSync(summaryFile, 'utf8').trim(); } catch {}
-    const todayStr = nowUTC.toISOString().substring(0, 10);
-    if (estHour >= 9 && lastSummaryDate !== todayStr) {
-      await sendNtfy('El Al NYC->TLV: Daily Summary', summary);
-      fs.writeFileSync(summaryFile, todayStr);
-      console.log('  Sent daily summary (9am EST).');
-    }
+  }
+
+  // Daily summary at 9am EST (always, regardless of changes)
+  const nowUTC = new Date();
+  const estHour = (nowUTC.getUTCHours() - 5 + 24) % 24;
+  const summaryFile = path.join(__dirname, 'elal-nyc-lastsummary.txt');
+  let lastSummaryDate = '';
+  try { lastSummaryDate = fs.readFileSync(summaryFile, 'utf8').trim(); } catch {}
+  const todayStr = nowUTC.toISOString().substring(0, 10);
+  if (estHour >= 9 && lastSummaryDate !== todayStr) {
+    await sendNtfy('El Al NYC->TLV: Daily Summary', summary);
+    fs.writeFileSync(summaryFile, todayStr);
+    console.log('  Sent daily summary (9am EST).');
   }
 }
 
